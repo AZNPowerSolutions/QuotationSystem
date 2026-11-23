@@ -29,8 +29,8 @@
   // ---------- State ----------
   let items = [];
   let invNoTouched = false;
-  let docType = 'invoice';      // 'invoice' | 'quotation' | 'do'
-  let source = null;            // { type, no } — dokumen asal (quotation→invoice, invoice/quotation→DO)
+  let docType = 'quotation';      // 'quotation' | 'invoice' | 'do'
+  let source = null;            // { type, no } — dokumen asal (quotation→invoice, invoice→quotation, invoice/quotation→DO)
   let adminPreviewDoc = '';     // pilihan preview dalam Admin (notes)
   const isQ = () => docType === 'quotation';
   const isDO = () => docType === 'do';
@@ -516,6 +516,7 @@
       toast('Belum sambung ke Google Sheet. Isi Web App URL dalam Tetapan.', true);
       openSettings(); return;
     }
+    const srcDoc = source;
     loading(true, 'Menjana PDF...', 'Langkah 1 / 2');
     try {
       const pdf = await buildPdf(f);
@@ -540,7 +541,9 @@
       $('#successTitle').textContent = docLabel() + ' Berjaya Disimpan';
       $('#successText').textContent = `${f.invoiceNo} • RM${fmtMoney(f.total)} • ${f.billName}`;
       $('#successOpen').href = r.url;
+      $('#successNew').textContent = 'Buat ' + docLabel() + ' Baru';
       $('#successModal').classList.remove('hidden');
+      if (srcDoc && srcDoc.type === 'invoice' && docType === 'quotation') setTimeout(() => offerVoid(srcDoc.no), 400);
     } catch (e) {
       loading(false); console.error(e);
       toast('Gagal simpan: ' + e.message, true);
@@ -548,7 +551,7 @@
   }
 
   // ---------- History ----------
-  let histType = 'invoice';
+  let histType = 'quotation';
   async function loadHistory(force) {
     const list = $('#histList');
     if (!apiReady()) {
@@ -572,9 +575,10 @@
     const q = $('#searchHist').value.trim().toLowerCase();
     const rows = all.filter(r => !q || (r.invoiceNo + ' ' + r.billName + ' ' + (r.refNo || '')).toLowerCase().includes(q));
     const now = new Date(); const mmyy = String(now.getMonth() + 1).padStart(2, '0') + '/' + now.getFullYear();
-    const thisMonth = all.filter(r => (r.date || '').slice(3) === mmyy);
     const lbl = docLabel(histType);
-    const isQuote = histType === 'quotation', isD = histType === 'do';
+    const isQuote = histType === 'quotation', isD = histType === 'do', isInv = !isQuote && !isD;
+    const isVoidRow = r => isInv && (r.status || '').toUpperCase() === 'VOID';
+    const thisMonth = all.filter(r => (r.date || '').slice(3) === mmyy && !isVoidRow(r));   // invoice VOID tak dikira
     const pending = isQuote ? all.filter(r => (r.status || '').toUpperCase() !== 'CONVERTED').length : 0;
     const stat2 = isQuote ? ['Belum jadi invoice', pending]
       : isD ? ['Jumlah kuantiti bulan ini', fmtQty(thisMonth.reduce((a, b) => a + (+b.total || 0), 0))]
@@ -588,15 +592,19 @@
     $('#histList').innerHTML = rows.map(r => {
       const done = (r.status || '').toUpperCase() === 'CONVERTED';
       const badges = [];
+      const voided = isVoidRow(r);
+      if (voided) badges.push(B('badge-void', 'VOID'));
       if (isQuote) badges.push(done ? B('badge-done', 'INVOICE: ' + (r.invoiceRef || '')) : B('badge-pending', 'BELUM INVOICE'));
       if (!isQuote && !isD && r.quotationRef) badges.push(B('badge-q', 'DARI ' + r.quotationRef));
       if (!isD && r.doRef) badges.push(B('badge-do', 'DO: ' + r.doRef));
       if (isD && r.refNo) badges.push(B('badge-q', 'REF: ' + r.refNo));
       const btns = [];
       if (isQuote) btns.push(`<button type="button" class="btn-outline !py-2 !px-3 text-xs" data-convert="${esc(r.invoiceNo)}">${done ? 'Buat Invoice Lagi' : 'Tukar jadi Invoice →'}</button>`);
-      if (!isD) btns.push(`<button type="button" class="btn-outline !py-2 !px-3 text-xs" data-mkdo="${esc(r.invoiceNo)}" data-from="${histType}">Buat DO →</button>`);
+      if (isInv && !voided) btns.push(`<button type="button" class="btn-outline !py-2 !px-3 text-xs" data-mkq="${esc(r.invoiceNo)}">Buat Quotation →</button>`);
+      if (!isD && !voided) btns.push(`<button type="button" class="btn-outline !py-2 !px-3 text-xs" data-mkdo="${esc(r.invoiceNo)}" data-from="${histType}">Buat DO →</button>`);
+      if (isInv && !voided) btns.push(`<button type="button" class="btn-outline !py-2 !px-3 text-xs !text-red-600 !border-red-200" data-void="${esc(r.invoiceNo)}">Batalkan (VOID)</button>`);
       return `
-      <div class="hist-item flex-wrap sm:flex-nowrap">
+      <div class="hist-item flex-wrap sm:flex-nowrap${voided ? ' is-void' : ''}">
         <div class="w-10 h-10 rounded-xl ${iconCls} grid place-items-center shrink-0 border">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M7 4h7l5 5v11a1 1 0 01-1 1H7a1 1 0 01-1-1V5a1 1 0 011-1z"/><path d="M14 4v5h5"/></svg>
         </div>
@@ -608,12 +616,14 @@
           <div class="font-semibold text-sm">${isD ? fmtQty(r.total) + ' qty' : 'RM' + fmtMoney(r.total)}</div>
           ${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener" class="text-xs text-brand-700 font-medium hover:underline">Buka PDF</a>` : ''}
         </div>
-        ${btns.length ? `<div class="flex gap-2 w-full sm:w-auto shrink-0 [&>button]:flex-1">${btns.join('')}</div>` : ''}
+        ${btns.length ? `<div class="flex flex-wrap gap-2 w-full sm:w-auto shrink-0 [&>button]:flex-1">${btns.join('')}</div>` : ''}
       </div>`;
     }).join('');
   }
 
   // ---------- Tukar dokumen: Quotation → Invoice, Invoice/Quotation → DO ----------
+  // Pautan sumber sah untuk: quotation→invoice, invoice→quotation, invoice/quotation→DO
+  const srcOk = (t, s) => !s || t === 'do' || (t === 'invoice' && s.type === 'quotation') || (t === 'quotation' && s.type === 'invoice');
   function setSource(src) {
     source = src && src.no ? src : null;
     $('#convertBanner').classList.toggle('hidden', !source);
@@ -636,10 +646,16 @@
       if (toType === 'invoice') {
         fillForm({ billName: d.billName, billAddress: d.billAddress, billTel: d.billTel, attn: d.attn,
           ourRef: d.ourRef, yourRef: no, terms: CFG.TERMS_DEFAULT.invoice, date: todayISO(), items: its });
+      } else if (toType === 'quotation') {
+        // Quotation dari invoice: Terms dikosongkan (wajib pilih), Your Ref = no invoice asal
+        fillForm({ billName: d.billName, billAddress: d.billAddress, billTel: d.billTel, attn: d.attn,
+          ourRef: d.ourRef, yourRef: no, terms: '', validity: CFG.DEFAULTS.validity, date: todayISO(), items: its });
       } else {
-        // DO: Ref No = dokumen asal; PO = Your Ref asal (kalau bukan no quotation kita)
+        // DO: Ref No = dokumen asal; PO = Your Ref asal (kalau bukan no quotation / invoice kita)
         const qp = String(CO.qPrefix || 'AZN-Q').toUpperCase() + '/';
-        const po = d.yourRef && !String(d.yourRef).toUpperCase().startsWith(qp) ? d.yourRef : '';
+        const ip = String(CO.prefix || 'AZN').toUpperCase() + '/';
+        const yr = String(d.yourRef || '').toUpperCase();
+        const po = d.yourRef && !yr.startsWith(qp) && !yr.startsWith(ip) ? d.yourRef : '';
         fillForm({ billName: d.billName, billAddress: d.billAddress, billTel: d.billTel, attn: d.attn,
           ourRef: no, yourRef: po, date: todayISO(), items: its });
       }
@@ -652,6 +668,27 @@
       loading(false); toast('Gagal ambil data: ' + e.message, true);
     }
   }
+  // ---------- VOID invoice ----------
+  async function voidInvoice(no, quiet) {
+    if (!quiet && !window.confirm(`Tandakan invoice ${no} sebagai VOID?\n\nInvoice ini tak dikira dalam jumlah bulan ini dan tak boleh dibuat DO. Nombor kekal dalam rekod. Untuk pulihkan, perlu PIN admin.`)) return false;
+    if (!quiet) loading(true, 'Menandakan VOID...', no);
+    try {
+      const r = await apiPost({ action: 'setStatus', no, status: 'VOID' });
+      if (!quiet) loading(false);
+      if (!r.ok) throw new Error(r.error);
+      histCache = {};
+      toast(`Invoice ${no} ditandakan VOID`);
+      if (currentView === 'history') loadHistory(true);
+      return true;
+    } catch (e) {
+      if (!quiet) loading(false);
+      toast('Gagal VOID: ' + e.message, true); return false;
+    }
+  }
+  function offerVoid(no) {
+    if (window.confirm(`Quotation ini dibuat daripada invoice ${no}.\n\nKalau invoice ${no} tu tersilap dibuat (patutnya quotation), tandakan VOID sekarang?`)) voidInvoice(no, true);
+  }
+
   function draftHasContent() {
     return !!($('#billName').value.trim() || items.some(it => (it.desc || '').trim() || it.price));
   }
@@ -749,8 +786,7 @@
     if (isQ() && !$('#validity').value) $('#validity').value = CFG.DEFAULTS.validity || '30 DAYS';
     applyTermsDefault();
     $('#termsReq').classList.toggle('hidden', !isQ());
-    // Pautan sumber hanya sah untuk: quotation→invoice, invoice/quotation→DO
-    if (source && !((t === 'invoice' && source.type === 'quotation') || t === 'do')) setSource(null);
+    if (source && !srcOk(t, source)) setSource(null);
     renderItems();
     if (!silent) { invNoTouched = false; refreshInvoiceNo(); }
     update();
@@ -975,6 +1011,7 @@
     revertAdmin(); adminPin = '';
     $('#adminPanel').classList.add('hidden'); $('#adminLock').classList.remove('hidden');
     $('#adminBar').classList.add('hidden'); $('#adminPin').value = '';
+    mgRows = []; $('#mgList').innerHTML = ''; $('#mgSearch').value = '';
     setEditing(false);
   }
 
@@ -995,7 +1032,7 @@
       adminPin = pin; msg.textContent = '';
       $('#adminLock').classList.add('hidden'); $('#adminPanel').classList.remove('hidden');
       $('#adminBar').classList.remove('hidden');
-      fillAdminForm(); setEditing(true); requestAnimationFrame(fitPreview);
+      fillAdminForm(); setEditing(true); requestAnimationFrame(fitPreview); loadManage();
     } catch (e) {
       msg.className = 'text-sm mt-2 text-red-600'; msg.textContent = e.message;
     } finally { $('#btnUnlock').disabled = false; }
@@ -1080,8 +1117,78 @@
     }
   }
 
+  // ---------- Admin: Urus Rekod (padam / pulihkan) ----------
+  let mgType = 'quotation', mgRows = [];
+  async function loadManage() {
+    const box = $('#mgList');
+    if (!adminPin) return;
+    box.innerHTML = `<div class="text-center text-slate-500 py-6 text-sm">Memuatkan rekod...</div>`;
+    const t = mgType;
+    try {
+      const r = await apiGet({ action: 'list', type: t, limit: 500 });
+      if (!r.ok) throw new Error(r.error);
+      if (t !== mgType) return;
+      mgRows = r.rows || []; renderManage();
+    } catch (e) { box.innerHTML = emptyState('Gagal muat rekod', e.message); }
+  }
+  function renderManage() {
+    const q = $('#mgSearch').value.trim().toLowerCase();
+    const rows = mgRows.filter(r => !q || (r.invoiceNo + ' ' + r.billName).toLowerCase().includes(q));
+    if (!rows.length) { $('#mgList').innerHTML = emptyState('Tiada rekod', q ? 'Cuba carian lain.' : docLabel(mgType) + ' yang disimpan akan muncul di sini.'); return; }
+    const isD = mgType === 'do';
+    $('#mgList').innerHTML = rows.map(r => {
+      const voided = mgType === 'invoice' && (r.status || '').toUpperCase() === 'VOID';
+      return `<div class="hist-item flex-wrap sm:flex-nowrap${voided ? ' is-void' : ''}">
+        <div class="min-w-0 flex-1">
+          <div class="font-semibold text-slate-900 text-sm flex items-center gap-1.5 flex-wrap">${esc(r.invoiceNo)}${voided ? ' <span class="badge badge-void">VOID</span>' : ''}</div>
+          <div class="text-xs text-slate-500 truncate">${esc(r.billName)} • ${esc(r.date)} • ${isD ? fmtQty(r.total) + ' qty' : 'RM' + fmtMoney(r.total)}</div>
+        </div>
+        <div class="flex gap-2 shrink-0">
+          ${voided ? `<button type="button" class="btn-outline !py-2 !px-3 text-xs" data-restore="${esc(r.invoiceNo)}">Pulihkan</button>` : ''}
+          <button type="button" class="btn-outline !py-2 !px-3 text-xs !text-red-600 !border-red-300" data-del="${esc(r.invoiceNo)}">Padam</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  async function deleteDocAdmin(no) {
+    const r0 = mgRows.find(x => x.invoiceNo === no) || {};
+    const L = docLabel(mgType);
+    let warn = '';
+    if (mgType === 'quotation' && r0.invoiceRef) warn += `\nPERHATIAN: sudah ada invoice daripada quotation ini (${r0.invoiceRef}). Invoice itu tidak dipadam.`;
+    if (mgType !== 'do' && r0.doRef) warn += `\nPERHATIAN: ada DO berkaitan (${r0.doRef}). DO itu tidak dipadam.`;
+    if (!window.confirm(`Padam ${L.toLowerCase()} ${no}${r0.billName ? ' (' + r0.billName + ')' : ''}?\n\nBaris dalam Google Sheet dipadam dan PDF dialihkan ke Trash Drive.\nNombor ini mungkin dijana semula kalau ia nombor terakhir bulan ini.${warn}\n\nTeruskan?`)) return;
+    loading(true, 'Memadam ' + L.toLowerCase() + '...', no);
+    try {
+      const r = await apiPost({ action: 'deleteDoc', pin: adminPin, type: mgType, no });
+      loading(false);
+      if (!r.ok) throw new Error(r.error);
+      mgRows = mgRows.filter(x => x.invoiceNo !== no); histCache = {};
+      renderManage(); toast(`${L} ${no} dipadam`);
+    } catch (e) { loading(false); toast('Gagal padam: ' + e.message, true); }
+  }
+  async function restoreInvoiceAdmin(no) {
+    loading(true, 'Memulihkan invoice...', no);
+    try {
+      const r = await apiPost({ action: 'setStatus', pin: adminPin, no, status: '' });
+      loading(false);
+      if (!r.ok) throw new Error(r.error);
+      const row = mgRows.find(x => x.invoiceNo === no); if (row) row.status = '';
+      histCache = {}; renderManage(); toast(`Invoice ${no} dipulihkan`);
+    } catch (e) { loading(false); toast('Gagal pulihkan: ' + e.message, true); }
+  }
+
   function initAdmin() {
     initDrag();
+    $$('#mgSeg [data-mg]').forEach(b => b.addEventListener('click', () => {
+      mgType = b.dataset.mg;
+      $$('#mgSeg [data-mg]').forEach(x => x.classList.toggle('active', x === b));
+      mgRows = []; loadManage();
+    }));
+    $('#mgSearch').addEventListener('input', renderManage);
+    $('#mgList').addEventListener('click', e => {
+      const d = e.target.closest('[data-del]'); if (d) return deleteDocAdmin(d.dataset.del);
+      const r = e.target.closest('[data-restore]'); if (r) return restoreInvoiceAdmin(r.dataset.restore);
+    });
     $$('#notesSeg [data-ndoc]').forEach(b => b.addEventListener('click', () => {
       adminPreviewDoc = b.dataset.ndoc;
       $$('#notesSeg [data-ndoc]').forEach(x => x.classList.toggle('active', x === b));
@@ -1126,8 +1233,8 @@
       fillForm(CFG.DEFAULTS);
     }
     applySettings(store.get('azn_settings', null));
-    setDocType('invoice', true);
-    const dt = draft && ['invoice', 'quotation', 'do'].includes(draft.docType) ? draft.docType : 'invoice';
+    setDocType('quotation', true);
+    const dt = draft && ['invoice', 'quotation', 'do'].includes(draft.docType) ? draft.docType : 'quotation';
     if (dt !== docType) setDocType(dt, true);
     if (draft && draft.source) setSource(draft.source);
     renderItems(); update();
@@ -1154,7 +1261,7 @@
     // Invoice / Quotation
     $$('#docSeg [data-doc]').forEach(b => b.addEventListener('click', () => {
       const t = b.dataset.doc;
-      if (source && !((t === 'invoice' && source.type === 'quotation') || t === 'do') &&
+      if (source && !srcOk(t, source) &&
           !window.confirm(`Dokumen ini dipautkan ke ${docLabel(source.type)} ${source.no}. Tukar & buang pautan?`)) return;
       setDocType(b.dataset.doc);
     }));
@@ -1189,6 +1296,8 @@
     }));
     $('#histList').addEventListener('click', e => {
       const b = e.target.closest('[data-convert]'); if (b) return convertDoc('quotation', b.dataset.convert, 'invoice');
+      const q = e.target.closest('[data-mkq]'); if (q) return convertDoc('invoice', q.dataset.mkq, 'quotation');
+      const v = e.target.closest('[data-void]'); if (v) return voidInvoice(v.dataset.void);
       const d = e.target.closest('[data-mkdo]'); if (d) return convertDoc(d.dataset.from, d.dataset.mkdo, 'do');
     });
 

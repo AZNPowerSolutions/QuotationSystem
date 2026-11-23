@@ -72,13 +72,13 @@
     <!-- Jenis dokumen -->
     <div class="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
       <div id="docSeg" class="doc-seg">
-        <button type="button" data-doc="invoice" class="active">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M7 4h7l5 5v11a1 1 0 01-1 1H7a1 1 0 01-1-1V5a1 1 0 011-1z"/><path d="M14 4v5h5M9 13h6M9 17h4"/></svg>
-          Invoice
-        </button>
-        <button type="button" data-doc="quotation">
+        <button type="button" data-doc="quotation" class="active">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M7 4h7l5 5v11a1 1 0 01-1 1H7a1 1 0 01-1-1V5a1 1 0 011-1z"/><path d="M14 4v5h5M12 11v6M9.5 13.5c0-1 1-1.5 2.5-1.5s2.5.6 2.5 1.4c0 2-5 1-5 3 0 .8 1 1.4 2.5 1.4s2.5-.5 2.5-1.5"/></svg>
           Quotation
+        </button>
+        <button type="button" data-doc="invoice">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M7 4h7l5 5v11a1 1 0 01-1 1H7a1 1 0 01-1-1V5a1 1 0 011-1z"/><path d="M14 4v5h5M9 13h6M9 17h4"/></svg>
+          Invoice
         </button>
         <button type="button" data-doc="do">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7h11v9H3zM14 10h4l3 3v3h-7M7.5 19a1.5 1.5 0 100-3 1.5 1.5 0 000 3zm10 0a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/></svg>
@@ -107,11 +107,11 @@
         <div class="card">
           <div class="card-head">
             <span class="step">1</span>
-            <h2 id="docCardTitle">Maklumat Invoice</h2>
+            <h2 id="docCardTitle">Maklumat Quotation</h2>
           </div>
           <div class="grid grid-cols-2 gap-3">
             <div class="col-span-2 sm:col-span-1">
-              <label class="lbl" for="invoiceNo" id="noLabelForm">No. Invoice</label>
+              <label class="lbl" for="invoiceNo" id="noLabelForm">No. Quotation</label>
               <div class="relative">
                 <input id="invoiceNo" class="inp pr-10 font-semibold" placeholder="AZN/0225-001" />
                 <button id="btnRegen" type="button" class="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-slate-400 hover:text-brand-600 hover:bg-brand-50" title="Jana nombor auto">
@@ -381,8 +381,8 @@
         <h1 class="text-xl font-bold text-slate-900">Rekod</h1>
         <p class="text-sm text-slate-500">Semua dokumen yang disimpan dalam Google Sheet</p>
         <div id="histSeg" class="doc-seg doc-seg-sm mt-3">
-          <button type="button" data-hist="invoice" class="active">Invoice</button>
-          <button type="button" data-hist="quotation">Quotation</button>
+          <button type="button" data-hist="quotation" class="active">Quotation</button>
+          <button type="button" data-hist="invoice">Invoice</button>
           <button type="button" data-hist="do">DO</button>
         </div>
       </div>
@@ -580,6 +580,18 @@
             <button id="btnAdminCancel" type="button" class="btn-outline flex-1">Batal Perubahan</button>
             <button id="btnAdminSave" type="button" class="btn-primary flex-[1.4]">Simpan Tetapan</button>
           </div>
+
+          <div class="card" id="mgCard">
+            <div class="card-head"><span class="step">7</span><h2>Urus Rekod (Padam)</h2></div>
+            <p class="text-xs text-slate-500 mb-3">Padam dokumen yang tersilap. Baris dalam Google Sheet dipadam, PDF dialihkan ke <b>Trash</b> Drive (boleh dipulihkan dalam 30 hari). Untuk invoice yang dah sampai ke client, lebih selamat guna <b>VOID</b> dalam tab Rekod supaya turutan nombor kekal.</p>
+            <div id="mgSeg" class="doc-seg doc-seg-sm mb-3">
+              <button type="button" data-mg="quotation" class="active">Quotation</button>
+              <button type="button" data-mg="invoice">Invoice</button>
+              <button type="button" data-mg="do">DO</button>
+            </div>
+            <input id="mgSearch" class="inp mb-3" placeholder="Cari no. dokumen / syarikat" />
+            <div id="mgList" class="space-y-2"></div>
+          </div>
         </section>
 
         <div id="adminPreviewSlot"></div>
@@ -610,7 +622,7 @@
       <div class="mx-auto w-14 h-14 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
         <svg class="w-7 h-7" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
       </div>
-      <h3 id="successTitle" class="mt-3 text-lg font-bold text-center text-slate-900">Invoice Berjaya Disimpan</h3>
+      <h3 id="successTitle" class="mt-3 text-lg font-bold text-center text-slate-900">Quotation Berjaya Disimpan</h3>
       <p id="successText" class="text-sm text-center text-slate-500 mt-1"></p>
       <div class="mt-5 grid gap-2">
         <a id="successOpen" href="#" target="_blank" rel="noopener" class="btn-primary">Buka PDF di Google Drive</a>
@@ -618,7 +630,7 @@
           <button id="successShare" class="btn-outline">Kongsi Link</button>
           <button id="successDownload" class="btn-outline">Muat Turun</button>
         </div>
-        <button id="successNew" class="btn-ghost">Buat Invoice Baru</button>
+        <button id="successNew" class="btn-ghost">Buat Quotation Baru</button>
       </div>
     </div>
   </div>

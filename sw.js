@@ -1,6 +1,6 @@
 /* Service Worker — AZN Invoice
    Tukar VERSION setiap kali update fail supaya user dapat versi baru */
-const VERSION = 'azn-invoice-v1.5.0';
+const VERSION = 'azn-invoice-v1.6.0';
 const CORE = [
   './', './index.html', './css/style.css', './js/config.js', './js/app.js', './manifest.json',
   './assets/logo.png', './assets/stamp.png', './assets/signature.png',
