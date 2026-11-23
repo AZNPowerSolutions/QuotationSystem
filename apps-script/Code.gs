@@ -32,7 +32,7 @@ const CONFIG = {
 const HEADERS = [
   'Timestamp', 'Invoice No', 'Date', 'Bill To', 'Address', 'Tel', 'Attn',
   'Our Ref', 'Your Ref', 'Terms', 'Total (RM)', 'Amount in Words', 'Bil. Item', 'Invoice', 'File ID',
-  'Quotation Ref', 'DO No'
+  'Quotation Ref', 'DO No', 'Status'
 ];
 const Q_HEADERS = [
   'Timestamp', 'Quotation No', 'Date', 'Bill To', 'Address', 'Tel', 'Attn',
@@ -284,6 +284,19 @@ function doPost(e) {
       lock.waitLock(20000);
       return json_(saveSettings_(body));
     }
+    if (body.action === 'setStatus') {
+      // VOID: tiada PIN (untuk betulkan kesilapan cepat). Pulihkan (status kosong): perlu PIN admin.
+      const st = String(body.status || '').toUpperCase();
+      if (st !== 'VOID' && st !== '') return json_({ ok: false, error: 'Status tidak sah' });
+      if (st === '' && !checkPin_(body.pin)) return json_({ ok: false, error: 'PIN salah' });
+      lock.waitLock(20000);
+      return json_(setInvoiceStatus_(body.no, st));
+    }
+    if (body.action === 'deleteDoc') {
+      if (!checkPin_(body.pin)) return json_({ ok: false, error: 'PIN salah — sila kunci & masuk semula' });
+      lock.waitLock(20000);
+      return json_(deleteDoc_(body.type, body.no));
+    }
     if (body.action !== 'save') return json_({ ok: false, error: 'Action tidak dikenali' });
 
     const d = body.data || {};
@@ -324,7 +337,7 @@ function doPost(e) {
     if (def.type === 'quotation') row.push(d.validity || '', 'PENDING', '', '');
     else if (def.type === 'do') row.push(d.shipName || '', d.shipAddress || '', d.shipAttn || '', d.shipTel || '',
       d.sourceType || '', d.sourceNo || '');
-    else row.push(d.quotationRef || '', '');
+    else row.push(d.quotationRef || '', '', '');
     sh.appendRow(row);
 
     // Rekod item
@@ -398,6 +411,7 @@ function getDoc_(type, no) {
     ourRef: v[7], yourRef: v[8], terms: v[9], url: v[13]
   };
   if (def.type === 'quotation') { doc.validity = v[15]; doc.status = v[16]; doc.invoiceRef = v[17]; }
+  else if (def.type === 'invoice') { doc.quotationRef = v[15]; doc.status = v[17]; }
   const it = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(def.items);
   doc.items = [];
   if (it && it.getLastRow() > 1) {
@@ -409,6 +423,66 @@ function getDoc_(type, no) {
     doc.items.sort((a, b) => a.n - b.n);
   }
   return { ok: true, doc: doc };
+}
+
+/** Tanda / pulihkan status VOID pada invoice */
+function setInvoiceStatus_(no, status) {
+  const def = docDef_('invoice');
+  const sh = getSheet_(def);
+  const r = findRow_(sh, no);
+  if (r < 0) return { ok: false, error: 'Invoice ' + no + ' tidak dijumpai' };
+  sh.getRange(r, def.headers.indexOf('Status') + 1).setValue(status);
+  return { ok: true, no: no, status: status };
+}
+
+/** Buang satu no daripada senarai "A, B, C" */
+function removeFromList_(cell, no) {
+  const t = String(no).trim().toUpperCase();
+  return String(cell || '').split(',').map(x => x.trim()).filter(x => x && x.toUpperCase() !== t).join(', ');
+}
+
+/** Padam dokumen: baris Sheet + baris item + PDF (ke Trash Drive, boleh dipulihkan) + betulkan pautan dokumen berkaitan */
+function deleteDoc_(type, no) {
+  const def = docDef_(type);
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = getSheet_(def);
+  const r = findRow_(sh, no);
+  if (r < 0) return { ok: false, error: def.label + ' ' + no + ' tidak dijumpai' };
+  const v = sh.getRange(r, 1, 1, def.headers.length).getDisplayValues()[0];
+  const fileId = v[14];
+
+  // Betulkan pautan dokumen berkaitan
+  try {
+    if (def.type === 'invoice' && v[15]) {                       // invoice dari quotation → quotation kembali PENDING (kalau tiada invoice lain)
+      const qs = getSheet_(docDef_('quotation'));
+      const qr = findRow_(qs, v[15]);
+      if (qr > 0) {
+        const left = removeFromList_(qs.getRange(qr, 18).getDisplayValue(), no);
+        qs.getRange(qr, 17, 1, 2).setValues([[left ? 'CONVERTED' : 'PENDING', left]]);
+      }
+    }
+    if (def.type === 'do' && (v[19] === 'invoice' || v[19] === 'quotation') && v[20]) {   // DO → buang no DO dari dokumen asal
+      const sdef = docDef_(v[19]);
+      const ssh = getSheet_(sdef);
+      const sr = findRow_(ssh, v[20]);
+      const col = sdef.headers.indexOf('DO No') + 1;
+      if (sr > 0 && col > 0) ssh.getRange(sr, col).setValue(removeFromList_(ssh.getRange(sr, col).getDisplayValue(), no));
+    }
+  } catch (e) {}
+
+  sh.deleteRow(r);
+
+  const it = ss.getSheetByName(def.items);
+  if (it && it.getLastRow() > 1) {
+    const col = it.getRange(2, 1, it.getLastRow() - 1, 1).getDisplayValues();
+    const target = String(no).trim().toUpperCase();
+    for (let i = col.length - 1; i >= 0; i--) {
+      if (String(col[i][0]).trim().toUpperCase() === target) it.deleteRow(i + 2);
+    }
+  }
+
+  if (fileId) { try { DriveApp.getFileById(fileId).setTrashed(true); } catch (e) {} }
+  return { ok: true, no: no };
 }
 
 function findRow_(sh, invoiceNo) {
@@ -467,7 +541,7 @@ function listInvoices_(limit, type) {
     };
     if (def.type === 'quotation') { o.validity = disp[i][15]; o.status = disp[i][16]; o.invoiceRef = disp[i][17]; o.doRef = disp[i][18] || ''; }
     else if (def.type === 'do') { o.refNo = disp[i][7]; o.po = disp[i][8]; o.shipName = disp[i][15]; o.sourceType = disp[i][19]; o.sourceNo = disp[i][20]; }
-    else { o.quotationRef = disp[i][15] || ''; o.doRef = disp[i][16] || ''; }
+    else { o.quotationRef = disp[i][15] || ''; o.doRef = disp[i][16] || ''; o.status = disp[i][17] || ''; }
     return o;
   }).reverse();
 }

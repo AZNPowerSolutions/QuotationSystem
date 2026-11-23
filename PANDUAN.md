@@ -36,7 +36,7 @@ Namakan: `AZN Invoice Database`.
 
 **A8.** Tunggu sampai log tunjuk **SETUP BERJAYA ✅**. Balik ke tab Google Sheet — sekarang ada 3 tab: `Invoices`, `Invoice_Items` dan `Settings`.
 
-> **Dah pernah setup versi lama?** Tampal Code.gs baru, run `setupSystem` sekali lagi (data lama selamat, dia cuma tambah tab `Settings`), lepas tu buat **Deploy → Manage deployments → ✏ Edit → Version: New version → Deploy**.
+> **Dah pernah setup versi lama?** Tampal Code.gs baru, run `setupSystem` sekali lagi (data lama selamat, dia cuma tambah tab `Settings` dan kolum `Status` pada tab `Invoices`), lepas tu buat **Deploy → Manage deployments → ✏ Edit → Version: New version → Deploy**.
 
 **A9.** Sekarang deploy jadi API. Klik butang biru **Deploy → New deployment**.
 
@@ -148,6 +148,33 @@ Tips gambar cop & tandatangan: tangkap gambar atas kertas putih, cahaya terang. 
 5. Quotation tu automatik bertukar status `CONVERTED` dan tercatat nombor invoicenya. Dalam Rekod akan nampak lencana hijau "INVOICE: AZN/...".
 
 > Notes quotation (payment terms, delivery, validity) boleh ditukar dalam **Admin → Notes → Quotation**. Prefix `AZN-Q` boleh ditukar dalam Admin → Profil Syarikat.
+
+---
+
+## Tersalah buat Invoice (sepatutnya Quotation)
+
+Urutan kerja: **Quotation → Invoice → DO**. App buka pada **Quotation** secara default.
+
+Kalau dah tersilap simpan invoice:
+
+1. Tab **Rekod** → pilih **Invoice** → tekan **Buat Quotation →** pada invoice tu.
+2. Bill To, item & harga masuk auto. **Your Ref** diisi nombor invoice asal. **Terms** kosong — pilih sendiri. Validity 30 DAYS.
+3. **Jana PDF & Simpan**. Lepas simpan, app tanya sama ada nak tandakan invoice asal sebagai **VOID** — tekan OK.
+4. Boleh juga tandakan VOID kemudian: tekan **Batalkan (VOID)** pada kad invoice. Invoice VOID dilencanakan merah, tak dikira dalam jumlah bulan ini dan tak boleh dibuat DO. Nombor invoice kekal dalam rekod.
+5. Nak pulihkan VOID: **Admin → Urus Rekod** → pilih Invoice → **Pulihkan** (perlu PIN).
+
+---
+
+## Padam dokumen (Admin)
+
+Tab **Admin** (masuk PIN) → skrol ke bawah → kad **Urus Rekod (Padam)**.
+
+1. Pilih jenis (Quotation / Invoice / DO), cari dokumen, tekan **Padam** dan sahkan.
+2. Baris dalam Google Sheet (termasuk item) dipadam. PDF dialihkan ke **Trash** Google Drive — boleh dipulihkan dalam 30 hari.
+3. Padam invoice yang dibuat dari quotation → quotation tu kembali `PENDING`. Padam DO → no DO dibuang dari invoice/quotation asal.
+4. Nombor dokumen terakhir bulan itu boleh dijana semula selepas dipadam. Untuk invoice yang dah dihantar kepada client, guna **VOID** dan jangan padam.
+
+> Selepas tampal `Code.gs` baru: run `setupSystem` sekali, kemudian **Deploy → Manage deployments → ✏ Edit → Version: New version → Deploy**. Deploy backend **dulu**, baru upload frontend.
 
 ---
 
